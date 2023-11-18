@@ -1,5 +1,15 @@
-use serde::{Deserialize, Serialize};
-use ulid::Ulid;
+use std::io::{StdoutLock, Write};
+
+use anyhow::Context;
+
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+
+pub trait Payload
+where
+    Self: Sized,
+{
+    fn gen_msg_payload(&self) -> Option<Self>;
+}
 
 pub struct Node {
     msg_id: usize,
@@ -14,8 +24,13 @@ impl Node {
         }
     }
 
-    pub fn gen_msg(&self, src_msg: Message) -> Option<Message> {
-        if let Some(payload) = src_msg.body.payload.gen_msg_payload() {
+    pub fn process<P>(&mut self, src_msg: Message<P>) -> Option<Message<P>>
+    where
+        P: Payload,
+    {
+        let reply = src_msg.body.payload.gen_msg_payload();
+
+        if let Some(payload) = reply {
             return Some(Message {
                 src: src_msg.dest,
                 dest: src_msg.src,
@@ -36,54 +51,41 @@ impl Node {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Message {
+pub struct Message<P> {
     src: String,
     dest: String,
-    body: Body,
+    body: Body<P>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-struct Body {
+struct Body<P> {
     msg_id: Option<usize>,
     in_reply_to: Option<usize>,
     #[serde(flatten)]
-    payload: Payload,
+    payload: P,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "type")]
-#[serde(rename_all = "snake_case")]
-enum Payload {
-    Init {
-        node_id: String,
-        node_ids: Vec<String>,
-    },
-    InitOk,
-    Echo {
-        echo: String,
-    },
-    EchoOk {
-        echo: String,
-    },
-    Generate,
-    GenerateOk {
-        id: String,
-    },
-}
+pub fn run<P>() -> anyhow::Result<()>
+where
+    P: DeserializeOwned + Payload + Serialize,
+{
+    let mut node = Node::new();
 
-impl Payload {
-    fn gen_msg_payload(&self) -> Option<Payload> {
-        match self {
-            Payload::Init { .. } => Some(Payload::InitOk),
-            Payload::InitOk => panic!("shouldn't receive init_ok"),
-            Payload::Echo { echo } => Some(Payload::EchoOk {
-                echo: echo.to_string(),
-            }),
-            Payload::EchoOk { .. } => None,
-            Payload::Generate => Some(Payload::GenerateOk {
-                id: Ulid::new().to_string(),
-            }),
-            Payload::GenerateOk { .. } => None,
+    let stdin = std::io::stdin().lock();
+    let inputs = serde_json::Deserializer::from_reader(stdin).into_iter::<Message<P>>();
+
+    let mut stdout: StdoutLock<'_> = std::io::stdout().lock();
+
+    for input in inputs {
+        let input = input.context("Maelstrom input could not be deserialised")?;
+
+        if let Some(reply) = node.process(input) {
+            serde_json::to_writer(&mut stdout, &reply).context("serialize response to init")?;
+            stdout.write_all(b"\n").context("write trailing newline")?;
+
+            node.inc_id();
         }
     }
+
+    Ok(())
 }
