@@ -1,4 +1,4 @@
-use froth::{run, Payload};
+use froth::{run, DummyState, Payload};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -18,8 +18,8 @@ enum EchoPayload {
     },
 }
 
-impl Payload for EchoPayload {
-    fn gen_msg_payload(&self) -> Option<Self> {
+impl Payload<DummyState> for EchoPayload {
+    fn gen_msg_payload(&self, _: &DummyState) -> Option<Self> {
         match self {
             Self::Init { .. } => Some(Self::InitOk),
             Self::InitOk => panic!("shouldn't receive init_ok"),
@@ -29,8 +29,10 @@ impl Payload for EchoPayload {
             _ => None,
         }
     }
+
+    fn modify_state(&self, _: &mut DummyState) {}
 }
 
 fn main() -> anyhow::Result<()> {
-    run::<EchoPayload>()
+    run::<DummyState, EchoPayload>(DummyState)
 }

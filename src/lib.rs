@@ -1,34 +1,50 @@
-use std::io::{StdoutLock, Write};
+use std::{
+    io::{StdoutLock, Write},
+    marker::PhantomData,
+};
 
 use anyhow::Context;
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-pub trait Payload
+pub struct DummyState;
+
+pub trait Payload<S>
 where
     Self: Sized,
 {
-    fn gen_msg_payload(&self) -> Option<Self>;
+    fn gen_msg_payload(&self, state: &S) -> Option<Self>;
+    fn modify_state(&self, state: &mut S);
 }
 
-pub struct Node {
+pub struct Node<S, P>
+where
+    P: Payload<S>,
+{
     msg_id: usize,
-    node_id: String,
+    state: S,
+    phantom: PhantomData<P>,
 }
 
-impl Node {
-    pub fn new() -> Self {
+impl<S, P> Node<S, P>
+where
+    P: Payload<S>,
+{
+    pub fn new(state: S) -> Self {
         Self {
             msg_id: 0,
-            node_id: String::new(),
+            state,
+            phantom: PhantomData,
         }
     }
 
-    pub fn process<P>(&mut self, src_msg: Message<P>) -> Option<Message<P>>
+    pub fn process(&mut self, src_msg: Message<P>) -> Option<Message<P>>
     where
-        P: Payload,
+        P: Payload<S>,
     {
-        let reply = src_msg.body.payload.gen_msg_payload();
+        src_msg.body.payload.modify_state(&mut self.state);
+
+        let reply = src_msg.body.payload.gen_msg_payload(&self.state);
 
         if let Some(payload) = reply {
             return Some(Message {
@@ -65,11 +81,11 @@ struct Body<P> {
     payload: P,
 }
 
-pub fn run<P>() -> anyhow::Result<()>
+pub fn run<S, P>(state: S) -> anyhow::Result<()>
 where
-    P: DeserializeOwned + Payload + Serialize,
+    P: DeserializeOwned + Payload<S> + Serialize,
 {
-    let mut node = Node::new();
+    let mut node = Node::<S, P>::new(state);
 
     let stdin = std::io::stdin().lock();
     let inputs = serde_json::Deserializer::from_reader(stdin).into_iter::<Message<P>>();
