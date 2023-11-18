@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use ulid::Ulid;
 
 pub struct Node {
     msg_id: usize,
@@ -64,6 +65,10 @@ enum Payload {
     EchoOk {
         echo: String,
     },
+    Generate,
+    GenerateOk {
+        id: String,
+    },
 }
 
 impl Payload {
@@ -75,6 +80,10 @@ impl Payload {
                 echo: echo.to_string(),
             }),
             Payload::EchoOk { .. } => None,
+            Payload::Generate => Some(Payload::GenerateOk {
+                id: Ulid::new().to_string(),
+            }),
+            Payload::GenerateOk { .. } => None,
         }
     }
 }
