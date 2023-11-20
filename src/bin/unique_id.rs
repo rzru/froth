@@ -1,4 +1,4 @@
-use froth::{run, DummyState, Payload};
+use froth::{run, Body, GenericNode, Message};
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
@@ -17,8 +17,43 @@ enum UniquePayload {
     },
 }
 
-impl Payload<DummyState> for UniquePayload {
-    fn gen_msg_payload(&self, _: &DummyState) -> Option<Self> {
+struct UniqueNode {
+    msg_id: usize,
+}
+
+impl GenericNode<UniquePayload> for UniqueNode {
+    fn process(&mut self, src_msg: Message<UniquePayload>) -> Vec<Message<UniquePayload>> {
+        let mut result = vec![];
+
+        if let Some(payload) = src_msg.body.payload.gen_msg_payload() {
+            result.push(Message {
+                src: src_msg.dest,
+                dest: src_msg.src,
+                body: Body {
+                    msg_id: Some(self.msg_id),
+                    in_reply_to: src_msg.body.msg_id,
+                    payload,
+                },
+            });
+        }
+
+        self.inc_id();
+        result
+    }
+}
+
+impl UniqueNode {
+    fn new() -> Self {
+        Self { msg_id: 0 }
+    }
+
+    pub fn inc_id(&mut self) {
+        self.msg_id += 1;
+    }
+}
+
+impl UniquePayload {
+    fn gen_msg_payload(&self) -> Option<Self> {
         match self {
             Self::Init { .. } => Some(Self::InitOk),
             Self::InitOk => panic!("shouldn't receive init_ok"),
@@ -28,10 +63,8 @@ impl Payload<DummyState> for UniquePayload {
             _ => None,
         }
     }
-
-    fn modify_state(&self, _: &mut DummyState) {}
 }
 
 fn main() -> anyhow::Result<()> {
-    run::<DummyState, UniquePayload>(DummyState)
+    run::<UniqueNode, UniquePayload>(UniqueNode::new())
 }
