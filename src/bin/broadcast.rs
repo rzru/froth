@@ -122,17 +122,15 @@ impl GenericNode<BroadcastPayload> for BroadcastNode {
             BroadcastPayload::Broadcast { .. } => {
                 if let Some(neighbours) = self.state.topology.get(&self.state.node_id) {
                     for neghbour in neighbours {
-                        if neghbour.as_str() != src_msg.src.as_str() {
-                            result.push(Message {
-                                src: self.state.node_id.clone(),
-                                dest: neghbour.clone(),
-                                body: Body {
-                                    msg_id: Some(self.msg_id),
-                                    in_reply_to: None,
-                                    payload: payload.clone(),
-                                },
-                            });
-                        }
+                        result.push(Message {
+                            src: self.state.node_id.clone(),
+                            dest: neghbour.clone(),
+                            body: Body {
+                                msg_id: Some(self.msg_id),
+                                in_reply_to: None,
+                                payload: payload.clone(),
+                            },
+                        });
                     }
 
                     self.inc_id();
